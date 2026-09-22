@@ -65,3 +65,19 @@ NyayaLlama-Indian-Legal-AI/
 ├── app.py
 ├── requirements.txt
 └── README.md
+
+⚠️ Disclaimer
+
+NyayaLlama is an educational and research prototype.
+
+Its responses should not be treated as professional legal advice.
+Important legal information should be verified using authoritative
+legal sources or with a qualified legal professional.
+
+🔮 Future Work
+*Retrieval-Augmented Generation (RAG)
+*Grounding responses in authoritative Indian legal sources
+*Citation-aware answers
+*Improved legal-domain datasets
+*Better factual evaluation
+*Long-context legal document analysis
