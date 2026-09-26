@@ -1,7 +1,11 @@
-
+import os
+import requests
 import gradio as gr
 import torch
-import traceback
+
+from pypdf import PdfReader
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from transformers import (
     AutoTokenizer,
@@ -9,264 +13,562 @@ from transformers import (
     BitsAndBytesConfig
 )
 
-MODEL_ID = "bhuvanteja03/nyayallama-final-adapter"
+from peft import PeftModel
 
-SYSTEM_PROMPT = """You are NyayaLlama, an Indian Legal Information Assistant.
 
-Provide clear, structured, educational and reasonably detailed explanations
-of Indian law.
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-Do not give one-sentence answers unless the question genuinely requires
-only a very short answer.
+BASE_MODEL = "unsloth/Llama-3.2-3B-Instruct"
+ADAPTER_MODEL = "bhuvanteja03/nyayallama-final-adapter"
 
-For most legal questions, provide 3 to 6 sentences or short paragraphs.
+LEGAL_SOURCES = {
+    "constitution.pdf":
+        "https://www.legislative.gov.in/static/uploads/2025/08/cb1b190ea633a1746368ed1fac35fb30.pdf",
 
-When relevant:
-- identify the applicable Article, Act, or legal section
-- explain what the provision means in simple language
-- explain its practical significance
-- give a simple example when useful
+    "bns.pdf":
+        "https://www.mha.gov.in/sites/default/files/2024-04/250883_english_01042024.pdf",
 
-For constitutional questions, mention the relevant Article and explain
-its meaning clearly.
+    "bnss.pdf":
+        "https://www.mha.gov.in/sites/default/files/2024-04/250884_2_english_01042024.pdf",
 
-For current criminal-law questions, distinguish among the Bharatiya
-Nyaya Sanhita (BNS), Bharatiya Nagarik Suraksha Sanhita (BNSS), and
-Bharatiya Sakshya Adhiniyam (BSA), as applicable.
+    "bsa.pdf":
+        "https://www.mha.gov.in/sites/default/files/2024-04/250882_english_01042024_0.pdf",
+}
+
+
+SYSTEM_PROMPT = """
+You are NyayaLlama, an Indian Legal Information Assistant.
+
+Provide clear, structured and educational explanations of Indian law.
+
+Use the retrieved legal source context as the primary source for factual
+legal claims.
+
+When relevant, identify the applicable constitutional provision, statute,
+or legal section.
+
+For current criminal-law questions, distinguish among:
+- Bharatiya Nyaya Sanhita (BNS)
+- Bharatiya Nagarik Suraksha Sanhita (BNSS)
+- Bharatiya Sakshya Adhiniyam (BSA)
 
 Do not invent legal provisions, section numbers, cases, or citations.
 
-If the available information is insufficient or the question depends on
-specific facts, clearly state that limitation.
+If the retrieved information is insufficient to answer the question,
+clearly state that the available source material is insufficient.
 
-Use simple language suitable for a student learning Indian law.
-
-Responses are for educational and informational purposes only and are
+This system provides educational and informational content only and is
 not a substitute for advice from a qualified legal professional.
 """
 
-print("======================================")
-print("Starting NyayaLlama")
-print("======================================")
 
-# -------------------------------
-# TOKENIZER
-# -------------------------------
+# ============================================================
+# DOWNLOAD LEGAL SOURCES
+# ============================================================
 
-print("Loading tokenizer...")
+def download_sources():
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    os.makedirs("legal_sources", exist_ok=True)
+
+    for filename, url in LEGAL_SOURCES.items():
+
+        path = os.path.join("legal_sources", filename)
+
+        if os.path.exists(path) and os.path.getsize(path) > 1000:
+            print("Already available:", filename)
+            continue
+
+        print("Downloading:", filename)
+
+        response = requests.get(
+            url,
+            timeout=120
+        )
+
+        response.raise_for_status()
+
+        with open(path, "wb") as file:
+            file.write(response.content)
+
+        print("Downloaded:", filename)
+
+
+# ============================================================
+# BUILD LEGAL RETRIEVAL INDEX
+# ============================================================
+
+def build_index():
+
+    chunks = []
+
+    for filename in os.listdir("legal_sources"):
+
+        if not filename.endswith(".pdf"):
+            continue
+
+        path = os.path.join(
+            "legal_sources",
+            filename
+        )
+
+        print("Processing:", filename)
+
+        reader = PdfReader(path)
+
+        for page_number, page in enumerate(
+            reader.pages,
+            start=1
+        ):
+
+            page_text = page.extract_text()
+
+            if not page_text:
+                continue
+
+            page_text = page_text.strip()
+
+            if len(page_text) < 50:
+                continue
+
+            chunks.append({
+                "source": filename,
+                "page": page_number,
+                "text": page_text
+            })
+
+        print(
+            "Pages processed:",
+            len(reader.pages)
+        )
+
+    if not chunks:
+        raise RuntimeError(
+            "No legal documents were successfully indexed."
+        )
+
+    texts = [
+        item["text"]
+        for item in chunks
+    ]
+
+    vectorizer = TfidfVectorizer(
+        lowercase=True,
+        stop_words="english",
+        ngram_range=(1, 2)
+    )
+
+    vectors = vectorizer.fit_transform(texts)
+
+    return chunks, vectorizer, vectors
+
+
+# ============================================================
+# RETRIEVAL
+# ============================================================
+
+def retrieve_legal_context(
+    question,
+    chunks,
+    vectorizer,
+    chunk_vectors,
+    top_k=5
+):
+
+    question_lower = question.lower()
+
+    query_vector = vectorizer.transform(
+        [question]
+    )
+
+    similarities = cosine_similarity(
+        query_vector,
+        chunk_vectors
+    )[0]
+
+    scores = similarities.copy()
+
+    # Prefer the appropriate legal document
+    preferred_source = None
+
+    if (
+        "article" in question_lower
+        or "constitution" in question_lower
+    ):
+        preferred_source = "constitution.pdf"
+
+    elif (
+        "bns" in question_lower
+        or "bharatiya nyaya sanhita" in question_lower
+    ):
+        preferred_source = "bns.pdf"
+
+    elif (
+        "bnss" in question_lower
+        or "criminal procedure" in question_lower
+    ):
+        preferred_source = "bnss.pdf"
+
+    elif (
+        "bsa" in question_lower
+        or "evidence" in question_lower
+    ):
+        preferred_source = "bsa.pdf"
+
+    if preferred_source:
+
+        for i, item in enumerate(chunks):
+
+            if item["source"] == preferred_source:
+                scores[i] += 0.30
+
+    # Important constitutional terms
+    important_terms = []
+
+    if "article 21" in question_lower:
+
+        important_terms = [
+            "article 21",
+            "life",
+            "personal liberty"
+        ]
+
+    elif "article 14" in question_lower:
+
+        important_terms = [
+            "article 14",
+            "equality",
+            "equal protection"
+        ]
+
+    elif "article 19" in question_lower:
+
+        important_terms = [
+            "article 19",
+            "freedom"
+        ]
+
+    for i, item in enumerate(chunks):
+
+        text_lower = item["text"].lower()
+
+        for term in important_terms:
+
+            if term in text_lower:
+                scores[i] += 0.40
+
+    top_indices = scores.argsort()[
+        -top_k:
+    ][::-1]
+
+    results = []
+
+    for idx in top_indices:
+
+        if scores[idx] <= 0:
+            continue
+
+        results.append({
+            "source": chunks[idx]["source"],
+            "page": chunks[idx]["page"],
+            "score": float(scores[idx]),
+            "text": chunks[idx]["text"]
+        })
+
+    return results
+
+
+# ============================================================
+# PREPARE SOURCES
+# ============================================================
+
+print("=" * 60)
+print("NYAYALLAMA")
+print("Indian Legal AI Assistant")
+print("=" * 60)
+
+print("\nPreparing legal sources...")
+
+download_sources()
+
+chunks, vectorizer, chunk_vectors = build_index()
+
+print(
+    "\nLegal pages indexed:",
+    len(chunks)
+)
+
+
+# ============================================================
+# LOAD MODEL
+# ============================================================
+
+print("\nLoading tokenizer...")
+
+tokenizer = AutoTokenizer.from_pretrained(
+    BASE_MODEL
+)
 
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-print("Tokenizer loaded.")
+
+print("Loading 4-bit model...")
+
+quant_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True
+)
 
 
-# -------------------------------
-# MODEL
-# -------------------------------
+base_model = AutoModelForCausalLM.from_pretrained(
+    BASE_MODEL,
+    quantization_config=quant_config,
+    device_map="auto"
+)
 
-print("Loading model...")
 
-if torch.cuda.is_available():
+print("Loading LoRA adapter...")
 
-    print("CUDA detected.")
-
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True
-    )
-
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        quantization_config=bnb_config,
-        device_map="auto"
-    )
-
-else:
-
-    print("CPU detected.")
-
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID
-    )
+model = PeftModel.from_pretrained(
+    base_model,
+    ADAPTER_MODEL
+)
 
 model.eval()
 
-MODEL_DEVICE = next(model.parameters()).device
-
-print("Model loaded successfully.")
-print("Device:", MODEL_DEVICE)
-print("======================================")
+print("\nModel loaded successfully.")
 
 
-# -------------------------------
-# GENERATION
-# -------------------------------
+# ============================================================
+# GENERATE ANSWER
+# ============================================================
 
 def generate_answer(question):
 
-    try:
+    retrieved = retrieve_legal_context(
+        question,
+        chunks,
+        vectorizer,
+        chunk_vectors,
+        top_k=5
+    )
 
-        print("\n======================================")
-        print("QUESTION:")
-        print(question)
-
-        # Force normal string
-        question = str(question).strip()
-
-        question = question + """
-
-        Please answer this question in a reasonably detailed way.
-        Give 4 to 6 clear sentences.
-        Explain the legal concept in simple language.
-        Mention the relevant Article, Act, or section when applicable.
-        Give a simple example if useful.
-        Do not stop after only one sentence.
-        """
-
-        # ---------------------------------
-        # MANUAL LLAMA 3 CHAT PROMPT
-        # ---------------------------------
-
-        prompt = (
-            "<|begin_of_text|>"
-            "<|start_header_id|>system<|end_header_id|>\n\n"
-            + SYSTEM_PROMPT +
-            "\n<|eot_id|>"
-            "<|start_header_id|>user<|end_header_id|>\n\n"
-            + question +
-            "\n<|eot_id|>"
-            "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        )
-
-        print("Prompt created.")
-
-        # Tokenize
-        encoded = tokenizer(
-            prompt,
-            return_tensors="pt"
-        )
-
-        input_ids = encoded["input_ids"].to(MODEL_DEVICE)
-        attention_mask = encoded["attention_mask"].to(MODEL_DEVICE)
-
-        print("Input tokens:", input_ids.shape[-1])
-        print("Starting generation...")
-
-        with torch.no_grad():
-
-            outputs = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-
-                # Force the model to produce a reasonably detailed answer
-                min_new_tokens=80,
-                max_new_tokens=400,
-
-                # Controlled sampling gives more natural explanations
-                do_sample=True,
-                temperature=0.45,
-                top_p=0.90,
-
-                repetition_penalty=1.15,
-
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id
-            )
-
-        # Only take newly generated tokens
-        new_tokens = outputs[0][input_ids.shape[-1]:]
-
-        answer = tokenizer.decode(
-            new_tokens,
-            skip_special_tokens=True
-        ).strip()
-        
-        
-        print("Generated answer:")
-        print(answer)
-        print("======================================")
-
-        if not answer:
-            return "No answer was generated. Please try again."
-
-        return answer
-
-    except Exception as e:
-
-        print("\n\n========== REAL ERROR ==========")
-        print("ERROR TYPE:", type(e))
-        print("ERROR:", repr(e))
-        print("\nFULL TRACEBACK:")
-        traceback.print_exc()
-        print("================================\n")
+    if not retrieved:
 
         return (
-            "Generation failed.\n\n"
-            "Error type: "
-            + str(type(e).__name__)
-            + "\n"
-            + "Error details: "
-            + repr(e)
+            "I could not retrieve relevant legal source "
+            "material for this question."
         )
 
+    context_parts = []
 
-# -------------------------------
-# CHAT-STYLE GRADIO UI
-# -------------------------------
+    for item in retrieved:
 
-def chat_response(message, history):
+        context_parts.append(
+            f"[Source: {item['source']}, "
+            f"page {item['page']}]\n"
+            f"{item['text']}"
+        )
 
-    # Build the question using previous conversation
-    if history:
-
-        conversation = ""
-
-        for item in history:
-
-            if isinstance(item, dict):
-
-                role = item.get("role")
-                content = item.get("content")
-
-                if isinstance(content, str):
-
-                    if role == "user":
-                        conversation += "\nUser: " + content
-
-                    elif role == "assistant":
-                        conversation += "\nAssistant: " + content
-
-        full_question = conversation + "\nUser: " + str(message)
-
-    else:
-
-        full_question = str(message)
-
-    # Use the EXACT working generation function
-    return generate_answer(full_question)
-
-
-demo = gr.ChatInterface(
-    fn=chat_response,
-    title="⚖️ NyayaLlama: Indian Legal AI Assistant",
-    description=(
-        "Educational Indian legal information assistant "
-        "powered by Llama 3.2 3B and LoRA fine-tuning."
-    ),
-    textbox=gr.Textbox(
-        placeholder="Ask an Indian legal question...",
-        container=True
+    context = "\n\n".join(
+        context_parts
     )
-)
+
+    prompt = f"""
+<|system|>
+{SYSTEM_PROMPT}
+
+<|user|>
+
+Legal source context:
+
+{context}
+
+Question:
+{question}
+
+Answer using the retrieved legal context.
+Do not invent legal facts.
+
+If the retrieved context is insufficient,
+say so clearly.
+
+Give a concise educational explanation.
+
+<|assistant|>
+"""
+
+    inputs = tokenizer(
+        prompt,
+        return_tensors="pt",
+        truncation=True,
+        max_length=4096
+    )
+
+    inputs = {
+        key: value.to(model.device)
+        for key, value in inputs.items()
+    }
+
+    with torch.no_grad():
+
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=350,
+            do_sample=False,
+            repetition_penalty=1.05,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    input_length = inputs["input_ids"].shape[1]
+
+    generated_tokens = outputs[
+        0
+    ][input_length:]
+
+    answer = tokenizer.decode(
+        generated_tokens,
+        skip_special_tokens=True
+    ).strip()
+
+    # Add source information
+    source_lines = [
+        "\n\n### Sources Used"
+    ]
+
+    for item in retrieved[:3]:
+
+        source_lines.append(
+            f"- {item['source']}, "
+            f"page {item['page']}"
+        )
+
+    return answer + "\n".join(source_lines)
+
+
+# ============================================================
+# GRADIO INTERFACE
+# ============================================================
+
+def respond(message, history):
+
+    if not message or not message.strip():
+
+        return history, ""
+
+    try:
+
+        answer = generate_answer(
+            message.strip()
+        )
+
+    except Exception as error:
+
+        answer = (
+            "An error occurred while generating "
+            "the answer.\n\n"
+            f"Error: {str(error)}"
+        )
+
+    history = history or []
+
+    history.append(
+        (
+            message,
+            answer
+        )
+    )
+
+    return history, ""
+
+
+# ============================================================
+# USER INTERFACE
+# ============================================================
+
+with gr.Blocks(
+    title="NyayaLlama — Indian Legal AI Assistant"
+) as demo:
+
+    gr.Markdown(
+        """
+# ⚖️ NyayaLlama
+
+### Indian Legal AI Assistant
+
+Educational legal information grounded in retrieved
+Indian legal sources.
+"""
+    )
+
+    chatbot = gr.Chatbot(
+        label="NyayaLlama",
+        height=500
+    )
+
+    textbox = gr.Textbox(
+        label="Ask a legal-information question",
+        placeholder=(
+            "Example: What is Article 21 "
+            "of the Constitution of India?"
+        ),
+        lines=3
+    )
+
+    with gr.Row():
+
+        submit = gr.Button(
+            "Send",
+            variant="primary"
+        )
+
+        clear = gr.Button(
+            "Clear"
+        )
+
+    submit.click(
+        respond,
+        inputs=[
+            textbox,
+            chatbot
+        ],
+        outputs=[
+            chatbot,
+            textbox
+        ]
+    )
+
+    textbox.submit(
+        respond,
+        inputs=[
+            textbox,
+            chatbot
+        ],
+        outputs=[
+            chatbot,
+            textbox
+        ]
+    )
+
+    clear.click(
+        lambda: ([], ""),
+        outputs=[
+            chatbot,
+            textbox
+        ]
+    )
+
+
+# ============================================================
+# START APPLICATION
+# ============================================================
 
 if __name__ == "__main__":
 
     demo.launch(
-        share=True,
-        debug=True
+        share=True
     )
