@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NyayaLlama — Indian Legal AI Assistant using Llama 3.2 3B, LoRA fine-tuning and Retrieval-Augmented Generation.">
+<title>NyayaLlama | Indian Legal AI Assistant</title>
+<style>
+:root{--bg:#f4f7fb;--navy:#102a67;--blue:#24459a;--cyan:#18a7c8;--text:#13254d;--muted:#5f6f8f;--card:#fff;--border:#e5eaf3;--green:#18a66a;--shadow:0 12px 35px rgba(26,49,94,.08)}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 10% 0%,rgba(49,87,183,.08),transparent 28%),linear-gradient(180deg,#f8faff 0%,var(--bg) 100%);color:var(--text);line-height:1.65}a{text-decoration:none;color:inherit}.container{width:min(1120px,calc(100% - 36px));margin:auto}
+nav{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}.nav-inner{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{display:flex;align-items:center;gap:10px;font-size:1.18rem;font-weight:800;color:var(--navy)}.brand-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:var(--navy);color:white}.nav-links{display:flex;gap:25px;color:#536481;font-size:.94rem}.nav-links a:hover{color:var(--blue)}.nav-button{background:var(--navy);color:white;padding:9px 15px;border-radius:9px;font-weight:700}
+.hero{padding:110px 0 90px;text-align:center}.status{display:inline-flex;align-items:center;gap:8px;border:1px solid #cfe9dc;background:#f0fbf6;color:#087b4b;padding:7px 13px;border-radius:999px;font-size:.86rem;font-weight:700}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--green)}h1{margin-top:24px;font-size:clamp(2.8rem,7vw,5.5rem);line-height:1.03;letter-spacing:-.045em;color:var(--navy)}.gradient{background:linear-gradient(90deg,#24459a,#18a7c8);-webkit-background-clip:text;background-clip:text;color:transparent}.hero-text{max-width:760px;margin:25px auto 0;color:var(--muted);font-size:1.08rem}.buttons{display:flex;justify-content:center;flex-wrap:wrap;gap:12px;margin-top:32px}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:190px;padding:13px 19px;border-radius:9px;font-weight:750;transition:.2s ease;border:1px solid transparent}.btn:hover{transform:translateY(-2px)}.btn-primary{background:var(--navy);color:white;box-shadow:0 8px 22px rgba(16,42,103,.18)}.btn-secondary{background:white;color:var(--navy);border-color:#cbd5e5}
+section{padding:80px 0}.section-label{color:#3157b7;font-size:.82rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;margin-bottom:8px}h2{color:var(--navy);font-size:clamp(2rem,4vw,3rem);line-height:1.15;letter-spacing:-.03em}.intro{max-width:730px;margin-top:15px;color:var(--muted)}.grid{display:grid;gap:18px;margin-top:35px}.grid-3{grid-template-columns:repeat(3,1fr)}.grid-4{grid-template-columns:repeat(4,1fr)}.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:25px;box-shadow:var(--shadow);transition:.2s ease}.card:hover{transform:translateY(-3px);border-color:#c8d5f0}.icon{width:42px;height:42px;display:grid;place-items:center;border-radius:10px;background:#eef3ff;margin-bottom:17px;font-size:1.15rem}.card h3{color:var(--navy);margin-bottom:8px;font-size:1.08rem}.card p{color:var(--muted);font-size:.93rem}
+.architecture{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:center;margin-top:40px}.arch{text-align:center;background:white;border:1px solid var(--border);border-radius:13px;padding:20px 10px;box-shadow:var(--shadow);font-weight:750;color:var(--navy)}.arrow{text-align:center;color:#3157b7;font-size:1.25rem;font-weight:800}.numbers{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:25px}.number{background:#fff;border:1px solid var(--border);border-radius:14px;padding:25px;text-align:center}.number strong{display:block;color:var(--blue);font-size:1.8rem}.number span{color:var(--muted);font-size:.88rem}
+.demo{background:linear-gradient(135deg,#102a67,#24459a);color:white;border-radius:22px;padding:55px 35px;text-align:center;box-shadow:0 20px 50px rgba(16,42,103,.18)}.demo .section-label{color:#8ce9f5}.demo h2{color:white}.demo p{max-width:680px;margin:14px auto 0;color:#dce6ff}.demo .btn-primary{background:white;color:var(--navy);box-shadow:none}.demo .btn-secondary{background:transparent;color:white;border-color:rgba(255,255,255,.45)}.demo-note{margin-top:16px;font-size:.8rem;color:#b9c9ec}.model-card{margin-top:35px;background:white;border:1px solid var(--border);border-radius:18px;padding:30px;box-shadow:var(--shadow)}.model-card p{color:var(--muted);margin-top:7px}.notice{margin-top:30px;padding:19px 22px;border-left:4px solid #f28a24;background:#fff8ef;border-radius:8px;color:#6b4b2b}
+footer{margin-top:40px;background:#0d1e46;color:#cbd7ef;padding:34px 0}.footer-inner{display:flex;justify-content:space-between;align-items:center;gap:20px}.footer-brand{color:white;font-weight:800;font-size:1.08rem}.footer-links{display:flex;gap:20px;flex-wrap:wrap}.footer-links a:hover{color:white}
+@media(max-width:850px){.nav-links{display:none}.nav-button{display:none}.grid-3,.grid-4,.numbers{grid-template-columns:1fr}.architecture{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.hero{padding-top:80px}}@media(max-width:520px){.container{width:min(100% - 24px,1120px)}.buttons .btn{width:100%}.demo{padding:40px 20px}}
+</style>
+</head>
+<body>
+<nav><div class="container nav-inner">
+<a href="#home" class="brand"><span class="brand-icon">⚖️</span><span>NyayaLlama</span></a>
+<div class="nav-links"><a href="#about">About</a><a href="#features">Features</a><a href="#architecture">Architecture</a><a href="#demo">Demo</a><a href="#model">Model</a></div>
+<a class="nav-button" href="https://b4eb6681326a5ea352.gradio.live" target="_blank" rel="noopener noreferrer">Launch Demo ↗</a>
+</div></nav>
+
+<main>
+<section id="home" class="hero"><div class="container">
+<div class="status"><span class="status-dot"></span>Working Prototype</div>
+<h1><span class="gradient">NyayaLlama</span><br>Indian Legal AI Assistant</h1>
+<p class="hero-text">An educational Indian legal information assistant built with Llama 3.2 3B, LoRA fine-tuning and Retrieval-Augmented Generation using selected verified Indian legal sources.</p>
+<div class="buttons">
+<a class="btn btn-primary" href="https://b4eb6681326a5ea352.gradio.live" target="_blank" rel="noopener noreferrer">🚀 Launch Live Demo</a>
+<a class="btn btn-secondary" href="https://github.com/jakkamsettibhuvanteja-ui/NyayaLlama-Indian-Legal-AI" target="_blank" rel="noopener noreferrer">💻 View Source Code</a>
+</div></div></section>
+
+<section id="about"><div class="container">
+<div class="section-label">About the Project</div><h2>Making Indian legal information easier to explore.</h2>
+<p class="intro">NyayaLlama is a research and educational prototype that combines domain-focused fine-tuning with retrieval from selected Indian legal documents. The goal is to produce clearer, source-grounded explanations for legal-information questions.</p>
+<div class="grid grid-3">
+<div class="card"><div class="icon">📚</div><h3>Legal Information</h3><p>Designed to explain selected constitutional and statutory concepts in a simpler format.</p></div>
+<div class="card"><div class="icon">🔎</div><h3>Source Retrieval</h3><p>Retrieves relevant pages from indexed legal documents before producing an answer.</p></div>
+<div class="card"><div class="icon">💬</div><h3>Interactive Questions</h3><p>Users can ask questions through the live Gradio prototype.</p></div>
+</div></div></section>
+
+<section id="features"><div class="container">
+<div class="section-label">Core Features</div><h2>Fine-tuning meets legal retrieval.</h2>
+<div class="grid grid-3">
+<div class="card"><div class="icon">🧠</div><h3>Llama 3.2 3B</h3><p>Uses Llama 3.2 3B Instruct as the base language model.</p></div>
+<div class="card"><div class="icon">⚙️</div><h3>LoRA Fine-Tuning</h3><p>Adapts the model using parameter-efficient fine-tuning.</p></div>
+<div class="card"><div class="icon">🔍</div><h3>RAG Pipeline</h3><p>Retrieves relevant legal pages using a TF-IDF based retrieval layer.</p></div>
+<div class="card"><div class="icon">🇮🇳</div><h3>Indian Legal Sources</h3><p>Includes selected Constitution, BNS, BNSS and BSA source documents.</p></div>
+<div class="card"><div class="icon">🛡️</div><h3>Grounded Answers</h3><p>The prototype uses retrieved legal context to reduce unsupported responses.</p></div>
+<div class="card"><div class="icon">💻</div><h3>Gradio Demo</h3><p>Provides an interactive interface for testing the trained system.</p></div>
+</div></div></section>
+
+<section id="architecture"><div class="container">
+<div class="section-label">System Architecture</div><h2>Question → Retrieval → Grounded Answer</h2>
+<p class="intro">The final prototype combines the fine-tuned model with retrieval from legal source documents.</p>
+<div class="architecture">
+<div class="arch">👤<br>User Question</div><div class="arrow">→</div><div class="arch">🔎<br>TF-IDF Retrieval</div><div class="arrow">→</div><div class="arch">📄<br>Legal Context</div>
+</div>
+<div class="architecture">
+<div class="arch">📄<br>Retrieved Evidence</div><div class="arrow">→</div><div class="arch">🧠<br>Llama 3.2 + LoRA</div><div class="arrow">→</div><div class="arch">💬<br>Grounded Response</div>
+</div>
+<div class="numbers"><div class="number"><strong>3B</strong><span>Base model parameters</span></div><div class="number"><strong>LoRA</strong><span>Parameter-efficient adaptation</span></div><div class="number"><strong>RAG</strong><span>Legal source retrieval</span></div></div>
+</div></section>
+
+<section id="demo"><div class="container"><div class="demo">
+<div class="section-label">Live Prototype</div><h2>Try NyayaLlama</h2>
+<p>Open the current Gradio prototype to ask questions about the Indian Constitution, BNS, BNSS, BSA and other concepts covered by the indexed sources.</p>
+<div class="buttons">
+<a class="btn btn-primary" href="https://b4eb6681326a5ea352.gradio.live" target="_blank" rel="noopener noreferrer">🚀 Launch Live Demo</a>
+<a class="btn btn-secondary" href="https://github.com/jakkamsettibhuvanteja-ui/NyayaLlama-Indian-Legal-AI" target="_blank" rel="noopener noreferrer">💻 View Source Code</a>
+</div>
+<p class="demo-note">Note: the Gradio URL is a temporary public session link and works while the Colab inference session is running.</p>
+</div></div></section>
+
+<section id="model"><div class="container">
+<div class="section-label">Trained Model</div><h2>NyayaLlama LoRA Adapter</h2>
+<div class="model-card">
+<p>The trained LoRA adapter is hosted on the Hugging Face Model Hub.</p>
+<div class="buttons">
+<a class="btn btn-primary" href="https://huggingface.co/bhuvanteja03/nyayallama-final-adapter" target="_blank" rel="noopener noreferrer">🤗 View Trained Adapter</a>
+<a class="btn btn-secondary" href="https://github.com/jakkamsettibhuvanteja-ui/NyayaLlama-Indian-Legal-AI" target="_blank" rel="noopener noreferrer">💻 View Source Code</a>
+</div>
+</div></div></section>
+
+<section id="limitations"><div class="container">
+<div class="section-label">Important</div><h2>Research and educational prototype.</h2>
+<div class="notice"><strong>⚠️ Important:</strong> NyayaLlama is a research and educational prototype. Its responses should not be treated as professional legal advice. Important legal information should be verified using authoritative legal sources or with a qualified legal professional.</div>
+</div></section>
+</main>
+
+<footer><div class="container footer-inner">
+<div><div class="footer-brand">⚖️ NyayaLlama</div><div>Indian Legal AI Assistant</div></div>
+<div class="footer-links">
+<a href="https://b4eb6681326a5ea352.gradio.live" target="_blank" rel="noopener noreferrer">Live Demo</a>
+<a href="https://github.com/jakkamsettibhuvanteja-ui/NyayaLlama-Indian-Legal-AI" target="_blank" rel="noopener noreferrer">GitHub</a>
+<a href="https://huggingface.co/bhuvanteja03/nyayallama-final-adapter" target="_blank" rel="noopener noreferrer">Hugging Face</a>
+</div></div></footer>
+</body>
+</html>
